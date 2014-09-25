@@ -1,6 +1,6 @@
 CC = g++
 LD = g++
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -std=c++0x
 LDFLAGS = 
 RM = /bin/rm -f
 SRCSD = source

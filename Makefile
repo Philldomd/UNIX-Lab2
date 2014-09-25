@@ -15,11 +15,19 @@ all: directories $(PROG)
 
 directories: $(OUTD)
 
-$(OUTD): $(OUTD)
+$(OUTD):
 	mkdir -p $(OUTD)
 
 $(PROG): $(OBJS)
 	$(LD) $(LDFLAGS) $(OBJS) -o $(PROG)
+
+$(OUTD)/depend: directories $(OUTD)/.depend
+
+$(OUTD)/.depend: $(SRCS)
+	rm -f $(OUTD)/.depend
+	$(CC) $(CFLAGS) -MM $^ | sed "s/^.*\.o/${OUTD}\/&/" > $(OUTD)/.depend;
+	
+-include $(OUTD)/.depend
 
 $(OUTD)/%.o: $(SRCSD)/%.cpp
 	$(CC) $(CFLAGS) -c $< -o $@

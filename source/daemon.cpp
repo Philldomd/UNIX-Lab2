@@ -53,7 +53,7 @@ void daemonizeAndClearFiles()
 	rlimit rl;
 	if(getrlimit(RLIMIT_NOFILE, &rl))
 	{
-		perror(NULL);
+		perror("getrlimit()");
 	}
 		
 	daemonize();

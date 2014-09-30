@@ -10,7 +10,7 @@ Config::Config(const char* filePath)
 	FILE* stream;
 	if((stream = fopen(filePath, "r")) == nullptr)
 	{
-		perror("Config::Config#fopen");
+		perror("fopen()");
 		return;
 	}
 	

@@ -1,4 +1,5 @@
 #include "network.h"
+#include "logger.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -82,8 +83,47 @@ Network::Network(uint16_t portNr)
 	
 	freeaddrinfo(result);
 	
-	if( close(sock) == -1)
+	acceptSocket = sock;
+}
+
+void Network::startListen()
+{
+	if (listen(acceptSocket, 1) == -1)
 	{
-		perror("close()");
+		Log::err("listen(): %s", strerror(errno));
+		return;
+	}
+	
+	int acceptedSocket;
+	if ((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
+	{
+		Log::err("accept(): %s", strerror(errno));
+		return;
+	}
+	
+	Log::debug("Got connection");
+	
+	char buffer[1024];
+	ssize_t receivedBytes = recv(acceptedSocket, buffer, 1024, 0);
+	if (receivedBytes == -1)
+	{
+		Log::err("recv(): %s", strerror(errno));
+		return;
+	}
+	
+	Log::debug("Received: %*s", receivedBytes, buffer);
+	
+	if (send(acceptedSocket, "Hej\n", 5, 0) == -1)
+	{
+		Log::err("send(): %s", strerror(errno));
+		return;
+	}
+}
+
+void Network::shutdown()
+{
+	if(close(acceptSocket) == -1)
+	{
+		Log::err("close(): %s", strerror(errno));
 	}
 }

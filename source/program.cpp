@@ -57,7 +57,10 @@ int main(int argc,char* argv[])
 		Log::info("Server started at port: %hu", port);
 	}
 	
+	net.startListen();
+	
 	Log::info("Server shutting down");
+	net.shutdown();
 	
 	return 0;
 }

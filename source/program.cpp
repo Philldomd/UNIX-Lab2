@@ -1,13 +1,12 @@
 #include "config.h"
 #include "daemon.h"
+#include "logger.h"
 #include "network.h"
 
 #include <cstdlib>
 #include <cstdio>
 #include <syslog.h>
 #include <unistd.h>
-
-int logFacility;
 
 int main(int argc,char* argv[])
 {
@@ -49,18 +48,16 @@ int main(int argc,char* argv[])
 	if(daemon)
 	{
 		daemonizeAndClearFiles();
-		openlog(argv[0], LOG_CONS, LOG_DAEMON);
-		logFacility = LOG_DAEMON;
-		syslog(LOG_DEBUG | LOG_DAEMON, "Daemon server started at port: %hu", port);
+		Log::open(argv[0], LOG_CONS, LOG_DAEMON);
+		Log::info("Daemon server started at port: %hu", port);
 	}
 	else
 	{
-		openlog(argv[0], LOG_CONS | LOG_PERROR, LOG_USER);
-		logFacility = LOG_USER;
-		syslog(LOG_DEBUG | LOG_USER, "Server started at port: %hu", port);
+		Log::open(argv[0], LOG_CONS | LOG_PERROR, LOG_USER);
+		Log::info("Server started at port: %hu", port);
 	}
 	
-	syslog(LOG_DEBUG | logFacility, "Server shutting down");
+	Log::info("Server shutting down");
 	
 	return 0;
 }

@@ -3,10 +3,14 @@
 #include "logger.h"
 #include "network.h"
 
+#include <cerrno>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <syslog.h>
 #include <unistd.h>
+
+#define NOBODY 65534
 
 int main(int argc,char* argv[])
 {
@@ -57,10 +61,35 @@ int main(int argc,char* argv[])
 		Log::info("Server started at port: %hu", port);
 	}
 	
-	net.startListen();
-
-	Log::info("Server shutting down");
+	if(chroot(conf.getRootPath()) == -1)
+	{
+		int errnum = errno;
+		
+		Log::err("chroot(): %s", strerror(errnum));
+		
+		if (errnum == EPERM)
+		{
+			Log::err("Unable to change root directory, are you root?");
+		}
+		
+		net.shutdown();
+		exit(1);
+	}
+	if(chdir("/") == -1)
+	{
+		Log::err("chdir(): %s", strerror(errno));
+		net.shutdown();
+		exit(1);
+	}
+	if(setresuid(NOBODY,NOBODY,NOBODY) == -1)
+	{
+		Log::err("setresuid(): %s", strerror(errno));
+		net.shutdown();
+		exit(1);
+	}
 	
+	net.startListen();
+	Log::info("Server shutting down");
 	net.shutdown();
 	
 	return 0;

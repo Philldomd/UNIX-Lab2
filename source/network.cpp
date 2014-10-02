@@ -40,7 +40,12 @@ Network::Network(uint16_t portNr)
 			fprintf(stderr, "socket(): %s\n", strerror(errno));
 			continue;
 		}
-		
+		int boolean = 1;
+		if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &boolean, sizeof(boolean)) != 0)
+		{
+			fprintf(stderr, "setsockopt(): %s\n", strerror(errno));
+			break;
+		}
 		if(bind(sock, rp->ai_addr, rp->ai_addrlen) == 0)
 		{
 			break;
@@ -110,8 +115,8 @@ void Network::startListen()
 		Log::err("recv(): %s", strerror(errno));
 		return;
 	}
-	
-	Log::debug("Received: %*s", receivedBytes, buffer);
+
+	Log::debug("Received: %.*s", receivedBytes, buffer);
 	
 	if (send(acceptedSocket, "Hej\n", 5, 0) == -1)
 	{

@@ -58,8 +58,9 @@ int main(int argc,char* argv[])
 	}
 	
 	net.startListen();
-	
+
 	Log::info("Server shutting down");
+	
 	net.shutdown();
 	
 	return 0;

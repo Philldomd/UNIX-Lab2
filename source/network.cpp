@@ -1,5 +1,7 @@
 #include "network.h"
+
 #include "logger.h"
+#include "MimeFinder.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +16,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-Network::Network(uint16_t portNr)
+Network::Network(uint16_t portNr, MimeFinder* mimeFinder)
+	: mimeFinder(mimeFinder)
 {
 	addrinfo hints = {};
 	hints.ai_family = AF_UNSPEC;	
@@ -173,13 +176,30 @@ void Network::startListen()
 			continue;
 		}
 		
-		const char header[] = "HTTP/1.1 200 OK\r\n\r\n";
+		const char header[] = "HTTP/1.1 200 OK\r\n";
 		if (send(acceptedSocket, header, sizeof(header), 0) == -1)
 		{
 			Log::err("send(): %s", strerror(errno));
 			close(file);
 			continue;
 		}
+		
+		const char* mimeType = mimeFinder->findMimeType(dup(file));
+		if (lseek(file, 0, SEEK_SET) == -1)
+		{
+			Log::err("lseek(): %s", strerror(errno));
+			close(file);
+			continue;
+		}
+		if (mimeType != nullptr)
+		{
+			const char cont[] = "Content-Type: ";
+			send(acceptedSocket, cont, sizeof(cont), 0);
+			send(acceptedSocket, mimeType, strlen(mimeType), 0);
+			send(acceptedSocket, "\r\n", 2, 0);
+		}
+		
+		send(acceptedSocket, "\r\n", 2, 0);
 		
 		struct stat fileStat;
 		if (fstat(file, &fileStat) == -1)
@@ -192,6 +212,8 @@ void Network::startListen()
 			close(file);
 			continue;
 		}
+		
+		Log::info("Sending %d bytes", fileStat.st_size);
 		
 		if (sendfile(acceptedSocket, file, nullptr, fileStat.st_size) == -1)
 		{

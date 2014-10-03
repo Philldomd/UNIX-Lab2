@@ -1,6 +1,7 @@
 #include "config.h"
 #include "daemon.h"
 #include "logger.h"
+#include "MimeFinder.h"
 #include "network.h"
 
 #include <cerrno>
@@ -47,7 +48,10 @@ int main(int argc,char* argv[])
 	printf("Port: %hu\n", port);
 	printf("Root: %s\n", conf.getRootPath());
 	
-	Network net(port);
+	MimeFinder mimeFinder;
+	mimeFinder.init();
+	
+	Network net(port, &mimeFinder);
 	
 	if(daemon)
 	{
@@ -92,6 +96,8 @@ int main(int argc,char* argv[])
 	
 	Log::info("Server shutting down");
 	net.shutdown();
+	
+	mimeFinder.shutdown();
 	
 	return 0;
 }

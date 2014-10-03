@@ -1,7 +1,8 @@
 CC = g++
 LD = g++
 CFLAGS = -g -Wall -std=c++0x
-LDFLAGS = 
+LDFLAGS =
+LIBS = -lmagic
 RM = /bin/rm -f
 SRCSD = source
 OUTD = build
@@ -19,7 +20,7 @@ $(OUTD):
 	mkdir -p $(OUTD)
 
 $(PROG): $(OBJS)
-	$(LD) $(LDFLAGS) $(OBJS) -o $(PROG)
+	$(LD) $(LDFLAGS) $(OBJS) $(LIBS) -o $(PROG)
 
 $(OUTD)/depend: directories $(OUTD)/.depend
 

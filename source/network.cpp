@@ -10,11 +10,14 @@
 
 #include <fcntl.h>
 #include <netdb.h>
+#include <sys/epoll.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#define MAX_EVENTS 8
 
 Network::Network(uint16_t portNr, MimeFinder* mimeFinder)
 	: mimeFinder(mimeFinder)
@@ -104,134 +107,170 @@ void Network::startListen()
 		Log::err("listen(): %s", strerror(errno));
 		return;
 	}
-
+	struct epoll_event ev;
+	struct epoll_event events[MAX_EVENTS];
+	int epollfd;
+	if((epollfd = epoll_create1(0)) ==  -1 )
+	{
+		Log::err("epoll_create1(): %s", strerror(errno));
+		return;
+	}
+	
+	ev.events = EPOLLIN;
+	ev.data.fd = acceptSocket;
+	if(epoll_ctl(epollfd, EPOLL_CTL_ADD, acceptSocket, &ev) == -1)
+	{
+		Log::err("epoll_ctl(): %s", strerror(errno));
+	}
+	
 	while (true)
 	{
-		int acceptedSocket;
-		if ((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
+		int nfds;
+		if((nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1)) == -1)
 		{
-			Log::err("accept(): %s", strerror(errno));
-			return;
+			Log::err("epoll_wait(): %s", strerror(errno));
 		}
-		
-		Log::debug("Got connection");
-		
-		char buffer[1024];
-		ssize_t receivedBytes = recv(acceptedSocket, buffer, 1024, 0);
-		if (receivedBytes == -1)
+		for(int n = 0; n < nfds; ++n)
 		{
-			Log::err("recv(): %s", strerror(errno));
-			return;
-		}
-
-		Log::debug("Received: %.*s", receivedBytes, buffer);
-		
-		char* tok1 = strtok(buffer, " ");
-		if (strcmp(tok1, "GET") != 0)
-		{
-			if (close(acceptedSocket) == -1)
+			int acceptedSocket;
+			if(events[n].data.fd == acceptSocket)
 			{
-				Log::err("close(): %s", strerror(errno));
+				if((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
+				{
+					Log::err("accept(): %s", strerror(errno));
+					return;
+				}
+				
+				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+				ev.data.fd = acceptedSocket;
+				if(epoll_ctl(epollfd, EPOLL_CTL_ADD, acceptedSocket, &ev) == -1)
+				{
+					Log::err("epoll_ctl(): %s", strerror(errno));
+					return;
+				}
 			}
-			continue;
-		}
-		
-		char* tok2 = strtok(nullptr, " ");
-		if (tok2 == nullptr)
-		{
-			if (close(acceptedSocket) == -1)
+			else
 			{
-				Log::err("close(): %s", strerror(errno));
+				Log::debug("Got connection");
+				
+				char buffer[1024];
+				ssize_t receivedBytes = recv(events[n].data.fd, buffer, 1024, 0);
+				if (receivedBytes == -1)
+				{
+					Log::err("recv(): %s", strerror(errno));
+					return;
+				}
+		
+				Log::debug("Received: %.*s", receivedBytes, buffer);
+				
+				char* tok1 = strtok(buffer, " ");
+				if (strcmp(tok1, "GET") != 0)
+				{
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					continue;
+				}
+				
+				char* tok2 = strtok(nullptr, " ");
+				if (tok2 == nullptr)
+				{
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					continue;
+				}
+				
+				char* tok3 = strtok(nullptr, "\r");
+				if (strcmp(tok3, "HTTP/1.1") != 0)
+				{
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					continue;
+				}
+				
+				int file;
+				if (strcmp(tok2, "/") == 0)
+				{
+					file = open("/index.html", O_RDONLY);
+				}
+				else
+				{
+					file = open(tok2, O_RDONLY);
+				}
+				
+				if (file == -1)
+				{
+					Log::err("open(): %s", strerror(errno));
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					continue;
+				}
+				
+				const char header[] = "HTTP/1.1 200 OK\r\n";
+				if (send(events[n].data.fd, header, sizeof(header), 0) == -1)
+				{
+					Log::err("send(): %s", strerror(errno));
+					close(file);
+					continue;
+				}
+				
+				const char* mimeType = mimeFinder->findMimeType(dup(file));
+				if (lseek(file, 0, SEEK_SET) == -1)
+				{
+					Log::err("lseek(): %s", strerror(errno));
+					close(file);
+					continue;
+				}
+				if (mimeType != nullptr)
+				{
+					const char cont[] = "Content-Type: ";
+					send(events[n].data.fd, cont, sizeof(cont), 0);
+					send(events[n].data.fd, mimeType, strlen(mimeType), 0);
+					send(events[n].data.fd, "\r\n", 2, 0);
+				}
+				
+				send(events[n].data.fd, "\r\n", 2, 0);
+				
+				struct stat fileStat;
+				if (fstat(file, &fileStat) == -1)
+				{
+					Log::err("fstat(): %s", strerror(errno));
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					close(file);
+					continue;
+				}
+				
+				Log::info("Sending %d bytes", fileStat.st_size);
+				
+				if (sendfile(events[n].data.fd, file, nullptr, fileStat.st_size) == -1)
+				{
+					Log::err("sendfile(): %s", strerror(errno));
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					close(file);
+					continue;
+				}
+				
+				if (close(events[n].data.fd) == -1)
+				{
+					Log::err("close(): %s", strerror(errno));
+				}
+				
+				close(file);
 			}
-			continue;
 		}
-		
-		char* tok3 = strtok(nullptr, "\r");
-		if (strcmp(tok3, "HTTP/1.1") != 0)
-		{
-			if (close(acceptedSocket) == -1)
-			{
-				Log::err("close(): %s", strerror(errno));
-			}
-			continue;
-		}
-		
-		int file;
-		if (strcmp(tok2, "/") == 0)
-		{
-			file = open("/index.html", O_RDONLY);
-		}
-		else
-		{
-			file = open(tok2, O_RDONLY);
-		}
-		
-		if (file == -1)
-		{
-			Log::err("open(): %s", strerror(errno));
-			if (close(acceptedSocket) == -1)
-			{
-				Log::err("close(): %s", strerror(errno));
-			}
-			continue;
-		}
-		
-		const char header[] = "HTTP/1.1 200 OK\r\n";
-		if (send(acceptedSocket, header, sizeof(header), 0) == -1)
-		{
-			Log::err("send(): %s", strerror(errno));
-			close(file);
-			continue;
-		}
-		
-		const char* mimeType = mimeFinder->findMimeType(dup(file));
-		if (lseek(file, 0, SEEK_SET) == -1)
-		{
-			Log::err("lseek(): %s", strerror(errno));
-			close(file);
-			continue;
-		}
-		if (mimeType != nullptr)
-		{
-			const char cont[] = "Content-Type: ";
-			send(acceptedSocket, cont, sizeof(cont), 0);
-			send(acceptedSocket, mimeType, strlen(mimeType), 0);
-			send(acceptedSocket, "\r\n", 2, 0);
-		}
-		
-		send(acceptedSocket, "\r\n", 2, 0);
-		
-		struct stat fileStat;
-		if (fstat(file, &fileStat) == -1)
-		{
-			Log::err("fstat(): %s", strerror(errno));
-			if (close(acceptedSocket) == -1)
-			{
-				Log::err("close(): %s", strerror(errno));
-			}
-			close(file);
-			continue;
-		}
-		
-		Log::info("Sending %d bytes", fileStat.st_size);
-		
-		if (sendfile(acceptedSocket, file, nullptr, fileStat.st_size) == -1)
-		{
-			Log::err("sendfile(): %s", strerror(errno));
-			if (close(acceptedSocket) == -1)
-			{
-				Log::err("close(): %s", strerror(errno));
-			}
-			close(file);
-			continue;
-		}
-		
-		if (close(acceptedSocket) == -1)
-		{
-			Log::err("close(): %s", strerror(errno));
-		}
-		
-		close(file);
 	}
 }
 

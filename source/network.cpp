@@ -6,8 +6,11 @@
 #include <cerrno>
 #include <cstring>
 
+#include <fcntl.h>
 #include <netdb.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -98,30 +101,115 @@ void Network::startListen()
 		Log::err("listen(): %s", strerror(errno));
 		return;
 	}
-	
-	int acceptedSocket;
-	if ((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
-	{
-		Log::err("accept(): %s", strerror(errno));
-		return;
-	}
-	
-	Log::debug("Got connection");
-	
-	char buffer[1024];
-	ssize_t receivedBytes = recv(acceptedSocket, buffer, 1024, 0);
-	if (receivedBytes == -1)
-	{
-		Log::err("recv(): %s", strerror(errno));
-		return;
-	}
 
-	Log::debug("Received: %.*s", receivedBytes, buffer);
-	
-	if (send(acceptedSocket, "Hej\n", 5, 0) == -1)
+	while (true)
 	{
-		Log::err("send(): %s", strerror(errno));
-		return;
+		int acceptedSocket;
+		if ((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
+		{
+			Log::err("accept(): %s", strerror(errno));
+			return;
+		}
+		
+		Log::debug("Got connection");
+		
+		char buffer[1024];
+		ssize_t receivedBytes = recv(acceptedSocket, buffer, 1024, 0);
+		if (receivedBytes == -1)
+		{
+			Log::err("recv(): %s", strerror(errno));
+			return;
+		}
+
+		Log::debug("Received: %.*s", receivedBytes, buffer);
+		
+		char* tok1 = strtok(buffer, " ");
+		if (strcmp(tok1, "GET") != 0)
+		{
+			if (close(acceptedSocket) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			continue;
+		}
+		
+		char* tok2 = strtok(nullptr, " ");
+		if (tok2 == nullptr)
+		{
+			if (close(acceptedSocket) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			continue;
+		}
+		
+		char* tok3 = strtok(nullptr, "\r");
+		if (strcmp(tok3, "HTTP/1.1") != 0)
+		{
+			if (close(acceptedSocket) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			continue;
+		}
+		
+		int file;
+		if (strcmp(tok2, "/") == 0)
+		{
+			file = open("/index.html", O_RDONLY);
+		}
+		else
+		{
+			file = open(tok2, O_RDONLY);
+		}
+		
+		if (file == -1)
+		{
+			Log::err("open(): %s", strerror(errno));
+			if (close(acceptedSocket) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			continue;
+		}
+		
+		const char header[] = "HTTP/1.1 200 OK\r\n\r\n";
+		if (send(acceptedSocket, header, sizeof(header), 0) == -1)
+		{
+			Log::err("send(): %s", strerror(errno));
+			close(file);
+			continue;
+		}
+		
+		struct stat fileStat;
+		if (fstat(file, &fileStat) == -1)
+		{
+			Log::err("fstat(): %s", strerror(errno));
+			if (close(acceptedSocket) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			close(file);
+			continue;
+		}
+		
+		if (sendfile(acceptedSocket, file, nullptr, fileStat.st_size) == -1)
+		{
+			Log::err("sendfile(): %s", strerror(errno));
+			if (close(acceptedSocket) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			close(file);
+			continue;
+		}
+		
+		if (close(acceptedSocket) == -1)
+		{
+			Log::err("close(): %s", strerror(errno));
+		}
+		
+		close(file);
 	}
 }
 

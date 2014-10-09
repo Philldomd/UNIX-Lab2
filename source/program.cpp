@@ -14,7 +14,7 @@
 #define NOBODY 65534
 
 int main(int argc,char* argv[])
-{
+{	
 	Config conf("conf.yaml");
 	
 	int opt;

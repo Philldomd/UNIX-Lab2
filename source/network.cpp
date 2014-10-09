@@ -1,5 +1,6 @@
 #include "network.h"
 
+#include "http.h"
 #include "logger.h"
 #include "MimeFinder.h"
 
@@ -160,11 +161,10 @@ void Network::startListen()
 					Log::err("recv(): %s", strerror(errno));
 					return;
 				}
-		
-				Log::debug("Received: %.*s", receivedBytes, buffer);
 				
-				char* tok1 = strtok(buffer, " ");
-				if (strcmp(tok1, "GET") != 0)
+				RequestResult res;
+				int err = readRequestLine(buffer, receivedBytes, res);
+				if (err < 0)
 				{
 					if (close(events[n].data.fd) == -1)
 					{
@@ -173,8 +173,9 @@ void Network::startListen()
 					continue;
 				}
 				
-				char* tok2 = strtok(nullptr, " ");
-				if (tok2 == nullptr)
+				char pathBuff[1024];
+				int unescapedLen = unescape(res.path, pathBuff, res.pathLen);
+				if (unescapedLen == -1)
 				{
 					if (close(events[n].data.fd) == -1)
 					{
@@ -183,24 +184,16 @@ void Network::startListen()
 					continue;
 				}
 				
-				char* tok3 = strtok(nullptr, "\r");
-				if (strcmp(tok3, "HTTP/1.1") != 0)
-				{
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					continue;
-				}
+				pathBuff[unescapedLen] = 0;
 				
 				int file;
-				if (strcmp(tok2, "/") == 0)
+				if (strcmp(pathBuff, "/") == 0)
 				{
 					file = open("/index.html", O_RDONLY);
 				}
 				else
 				{
-					file = open(tok2, O_RDONLY);
+					file = open(pathBuff, O_RDONLY);
 				}
 				
 				if (file == -1)
@@ -249,8 +242,6 @@ void Network::startListen()
 					close(file);
 					continue;
 				}
-				
-				Log::info("Sending %d bytes", fileStat.st_size);
 				
 				if (sendfile(events[n].data.fd, file, nullptr, fileStat.st_size) == -1)
 				{

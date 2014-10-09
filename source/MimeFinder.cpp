@@ -3,6 +3,7 @@
 #include "logger.h"
 
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -16,19 +17,19 @@ void MimeFinder::init()
 	cookie = magic_open(MAGIC_MIME_TYPE);
 	if (cookie == nullptr)
 	{
-		Log::err("magic_open(): %s", strerror(errno));
+		fprintf(stderr, "magic_open(): %s\n", strerror(errno));
 		exit(1);
 	}
 	
 	if (magic_load(cookie, nullptr) == -1)
 	{
-		Log::err("magic_load(): %s", magic_error(cookie));
+		fprintf(stderr, "magic_load(): %s\n", magic_error(cookie));
 		exit(1);
 	}
 	
 	if (magic_compile(cookie, nullptr) == -1)
 	{
-		Log::err("magic_compile(): %s", magic_error(cookie));
+		fprintf(stderr, "magic_compile(): %s\n", magic_error(cookie));
 		exit(1);
 	}
 }

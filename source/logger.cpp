@@ -37,6 +37,19 @@ void Log::info(const char* format, ...)
 	va_end(arglist);
 }
 
+void Log::connection(const char* client, const char* user,
+		const char* request, int status, size_t bytesSent)
+{
+	if (bytesSent > 0)
+	{
+		//Log::info("%s - %s [dateformat] \"%s\" %d %d", client, user, date, request, status, bytesSent);
+	}
+	else
+	{
+		//Log::info("%s - %s [dateformat] \"%s\" %d -", client, user, date, request, status);
+	}
+}
+
 void Log::helpLog(int priority, const char* format, va_list ap)
 {
 	char buffer[512];

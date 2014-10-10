@@ -13,5 +13,5 @@ public:
 	void init();
 	void shutdown();
 	
-	const char* findMimeType(int fd);
+	const char* findMimeType(int fd, const char* filename);
 };

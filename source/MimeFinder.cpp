@@ -2,6 +2,8 @@
 
 #include "logger.h"
 
+#include <unistd.h>
+
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -40,9 +42,49 @@ void MimeFinder::shutdown()
 	cookie = nullptr;
 }
 
-const char* MimeFinder::findMimeType(int fd)
+static const char* mimeTypes[][2] =
 {
-	const char* ret = magic_descriptor(cookie, fd);
+	{ "html", "text/html" },
+	{ "css", "text/css" },
+	{ "js", "application/javascript" },
+};
+
+static const char* findFromName(const char* filename)
+{
+	if (!filename)
+	{
+		return nullptr;
+	}
+	
+	const char* ext = strrchr(filename, '.');
+	if (ext == NULL)
+	{
+		return nullptr;
+	}
+	
+	ext++;
+	
+	for (auto map : mimeTypes)
+	{
+		if (strcmp(map[0], ext) == 0)
+		{
+			return map[1];
+		}
+	}
+	
+	return nullptr;
+}
+
+const char* MimeFinder::findMimeType(int fd, const char* filename)
+{
+	const char* ret = findFromName(filename);
+	if (ret != nullptr)
+	{
+		close(fd);
+		return ret;
+	}
+	
+	ret = magic_descriptor(cookie, fd);
 	if (ret == nullptr)
 	{
 		Log::err("magic_descriptor(): %s", magic_error(cookie));

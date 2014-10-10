@@ -101,6 +101,33 @@ Network::Network(uint16_t portNr, MimeFinder* mimeFinder)
 	acceptSocket = sock;
 }
 
+const char* getStatusStr(RequestErr status)
+{
+	switch (status)
+	{
+	case RequestErr::OK:
+		return "OK";
+		
+	case RequestErr::BAD_REQUEST:
+		return "Bad request";
+		
+	case RequestErr::FORBIDDEN:
+		return "Forbidden";
+		
+	case RequestErr::NOT_FOUND:
+		return "Not found";
+		
+	case RequestErr::INTERNAL:
+		return "Internal server error";
+		
+	case RequestErr::NOT_IMPLEMENTED:
+		return "Not implemented";
+		
+	default:
+		return "Unknown status";
+	}
+}
+
 void Network::startListen()
 {
 	if (listen(acceptSocket, 1) == -1)
@@ -152,53 +179,72 @@ void Network::startListen()
 			}
 			else
 			{
-				int status = 200;
-				
 				char buffer[1024];
 				ssize_t receivedBytes = recv(events[n].data.fd, buffer, 1024, 0);
 				if (receivedBytes == -1)
 				{
 					Log::err("recv(): %s", strerror(errno));
-					return;
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					continue;
 				}
 				
 				RequestResult res;
-				int err = readRequestLine(buffer, receivedBytes, res);
-				if (err < 0)
-				{
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					continue;
-				}
+				RequestErr status = readRequestLine(buffer, receivedBytes, res);
 				
 				char pathBuff[1024];
-				int unescapedLen = unescape(res.path, pathBuff, res.pathLen);
-				if (unescapedLen == -1)
+				const char* path = nullptr;
+				
+				switch (status)
 				{
-					if (close(events[n].data.fd) == -1)
+				case RequestErr::OK:
 					{
-						Log::err("close(): %s", strerror(errno));
+						int unescapedLen = unescape(res.path, pathBuff, res.pathLen);
+						if (unescapedLen == -1)
+						{
+							status = RequestErr::BAD_REQUEST;
+							path = "/400.html";
+						}
+						else
+						{						
+							pathBuff[unescapedLen] = 0;
+							path = pathBuff;
+						}
 					}
-					continue;
+					break;
+					
+				case RequestErr::BAD_REQUEST:
+					path = "/400.html";
+					break;
+					
+				case RequestErr::FORBIDDEN:
+					path = "/403.html";
+					break;
+					
+				case RequestErr::NOT_FOUND:
+					path = "/404.html";
+					break;
+					
+				case RequestErr::INTERNAL:
+					path = "/500.html";
+					break;
+					
+				case RequestErr::NOT_IMPLEMENTED:
+					path = "/501.html";
+					break;
 				}
 				
-				pathBuff[unescapedLen] = 0;
-				
-				int file;
-				if (strcmp(pathBuff, "/") == 0)
+				if (strcmp(path, "/") == 0)
 				{
-					file = open("/index.html", O_RDONLY);
-				}
-				else
-				{
-					file = open(pathBuff, O_RDONLY);
+					path = "/index.html";
 				}
 				
+				int file = open(path, O_RDONLY);
 				if (file == -1)
 				{
-					status = 404;
+					status = RequestErr::NOT_FOUND;
 					file = open("/404.html", O_RDONLY);
 					
 					if (file == -1)
@@ -213,40 +259,68 @@ void Network::startListen()
 					}
 				}
 				
-				const char header[] = "HTTP/1.0 200 OK\r\n";
-				if (send(events[n].data.fd, header, sizeof(header), 0) == -1)
-				{
-					Log::err("send(): %s", strerror(errno));
-					close(file);
-					continue;
-				}
+				char headerBuff[1024];
+				int headerLen = snprintf(headerBuff, sizeof(headerBuff), "HTTP/1.0 %3.3d %s\r\n", (int)status, getStatusStr(status));
 				
-				const char* mimeType = mimeFinder->findMimeType(dup(file));
+				const char* mimeType = mimeFinder->findMimeType(dup(file), path);
 				if (lseek(file, 0, SEEK_SET) == -1)
 				{
 					Log::err("lseek(): %s", strerror(errno));
-					close(file);
+					
+					if (close(file) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					
 					continue;
 				}
 				if (mimeType != nullptr)
 				{
-					const char cont[] = "Content-Type: ";
-					send(events[n].data.fd, cont, sizeof(cont), 0);
-					send(events[n].data.fd, mimeType, strlen(mimeType), 0);
-					send(events[n].data.fd, "\r\n", 2, 0);
+					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen,
+						"Content-Type: %s\r\n\r\n", mimeType);
+				}
+				else
+				{
+					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "\r\n\r\n");
 				}
 				
-				send(events[n].data.fd, "\r\n", 2, 0);
+				if (send(events[n].data.fd, headerBuff, headerLen, 0) == -1)
+				{
+					Log::err("send(): %s", strerror(errno));
+					
+					if (close(file) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					
+					continue;
+				}
 				
 				struct stat fileStat;
 				if (fstat(file, &fileStat) == -1)
 				{
 					Log::err("fstat(): %s", strerror(errno));
+					
+					if (close(file) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					
 					if (close(events[n].data.fd) == -1)
 					{
 						Log::err("close(): %s", strerror(errno));
 					}
-					close(file);
+					
 					continue;
 				}
 				
@@ -254,14 +328,22 @@ void Network::startListen()
 				if ((bytesSent = sendfile(events[n].data.fd, file, nullptr, fileStat.st_size)) == -1)
 				{
 					Log::err("sendfile(): %s", strerror(errno));
+					
+					if (close(file) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					
 					if (close(events[n].data.fd) == -1)
 					{
 						Log::err("close(): %s", strerror(errno));
 					}
-					close(file);
+					
 					continue;
-				}				
-				logStatus(buffer, receivedBytes, events[n].data.fd, bytesSent, status);
+				}
+				
+				logStatus(buffer, receivedBytes, events[n].data.fd, bytesSent, (int)status);
+				
 				if (close(events[n].data.fd) == -1)
 				{
 					Log::err("close(): %s", strerror(errno));

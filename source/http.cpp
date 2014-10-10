@@ -129,12 +129,12 @@ int unescape(const char* string, char* output, size_t stringlen)
 	return out - output;
 }
 
-int readRequestLine(const char* line, size_t len, RequestResult &result)
+RequestErr readRequestLine(const char* line, size_t len, RequestResult &result)
 {
 	char* sp1 = (char*)memchr(line, ' ', len);
 	if (sp1 == nullptr)
 	{
-		return -1;
+		return RequestErr::BAD_REQUEST;
 	}
 	
 	if ((sp1 - line) == 3 || memcmp(line, "GET", 3) == 0)
@@ -147,7 +147,7 @@ int readRequestLine(const char* line, size_t len, RequestResult &result)
 	}
 	else
 	{
-		return -1;
+		return RequestErr::NOT_IMPLEMENTED;
 	}
 	
 	len -= (sp1 + 1) - line;
@@ -156,7 +156,7 @@ int readRequestLine(const char* line, size_t len, RequestResult &result)
 	char* sp2 = (char*)memchr(line, ' ', len);
 	if (sp2 == nullptr)
 	{
-		return -1;
+		return RequestErr::BAD_REQUEST;
 	}
 	
 	const char* requestURI = line;
@@ -168,7 +168,7 @@ int readRequestLine(const char* line, size_t len, RequestResult &result)
 	char* crlf = (char*)memchr(line, '\r', len);
 	if (crlf == nullptr)
 	{
-		return -1;
+		return RequestErr::BAD_REQUEST;
 	}
 	
 	const char* version = line;
@@ -177,7 +177,7 @@ int readRequestLine(const char* line, size_t len, RequestResult &result)
 	if (versionLen != 8 || (memcmp(version, "HTTP/1.0", 8) != 0
 		&& memcmp(version, "HTTP/1.1", 8) != 0))
 	{
-		return -1;
+		return RequestErr::NOT_IMPLEMENTED;
 	}
 	
 	result.version = HttpVersion::V1_0;
@@ -191,7 +191,7 @@ int readRequestLine(const char* line, size_t len, RequestResult &result)
 	URIType res = identifyURI(requestURI, requestURILen);
 	if (res != URIType::RELATIVE)
 	{
-		return -1;
+		return RequestErr::NOT_IMPLEMENTED;
 	}
 	
 	int queryPos = findQuery(requestURI, requestURILen);
@@ -209,5 +209,5 @@ int readRequestLine(const char* line, size_t len, RequestResult &result)
 	result.path = requestURI;
 	result.pathLen = requestURILen;
 	
-	return 0;
+	return RequestErr::OK;
 }

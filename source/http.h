@@ -35,4 +35,14 @@ struct RequestResult
 	size_t pathLen;
 };
 
-int readRequestLine(const char* line, size_t len, RequestResult &result);
+enum class RequestErr
+{
+	OK = 200,
+	BAD_REQUEST = 400,
+	FORBIDDEN = 403,
+	NOT_FOUND = 404,
+	INTERNAL = 500,
+	NOT_IMPLEMENTED = 501,
+};
+
+RequestErr readRequestLine(const char* line, size_t len, RequestResult &result);

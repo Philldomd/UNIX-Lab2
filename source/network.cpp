@@ -151,9 +151,7 @@ void Network::startListen()
 				}
 			}
 			else
-			{
-				Log::debug("Got connection");
-				
+			{				
 				char buffer[1024];
 				ssize_t receivedBytes = recv(events[n].data.fd, buffer, 1024, 0);
 				if (receivedBytes == -1)
@@ -243,7 +241,8 @@ void Network::startListen()
 					continue;
 				}
 				
-				if (sendfile(events[n].data.fd, file, nullptr, fileStat.st_size) == -1)
+				size_t bytesSent;
+				if ((bytesSent = sendfile(events[n].data.fd, file, nullptr, fileStat.st_size)) == -1)
 				{
 					Log::err("sendfile(): %s", strerror(errno));
 					if (close(events[n].data.fd) == -1)
@@ -254,12 +253,42 @@ void Network::startListen()
 					continue;
 				}
 				
+				int error;
+				sockaddr_storage addrstorage;
+				socklen_t socklen = sizeof(addrstorage);
+				error = getpeername(events[n].data.fd, (sockaddr*)&addrstorage, &socklen);
+				if(error == -1)
+				{
+					Log::err("getnameinfo(): %s", strerror(errno));
+				}
+				char namebuff[NI_MAXHOST];
+				error = getnameinfo((sockaddr*)&addrstorage, sizeof(addrstorage), namebuff, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+				if(error != 0)
+				{
+					Log::err("getnameinfo(): %s", gai_strerror(error));
+				}
+				
 				if (close(events[n].data.fd) == -1)
 				{
 					Log::err("close(): %s", strerror(errno));
 				}
 				
-				close(file);
+				if(close(file) == -1)
+				{
+					Log::err("close(): %s", strerror(errno));
+				}
+				
+				char* linePos = (char*)memchr(buffer, '\r', receivedBytes);
+				if (linePos == nullptr)
+				{
+					buffer[receivedBytes - 1] = '\0';
+				}
+				else
+				{
+					*linePos = '\0';
+				}
+			
+				Log::connection(namebuff, "-", buffer, 200, bytesSent);
 			}
 		}
 	}

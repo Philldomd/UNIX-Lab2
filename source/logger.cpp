@@ -2,8 +2,11 @@
 
 #include <syslog.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdarg>
+#include <cstring>
+#include <ctime>
 
 int Log::facility = 0;
 
@@ -40,13 +43,34 @@ void Log::info(const char* format, ...)
 void Log::connection(const char* client, const char* user,
 		const char* request, int status, size_t bytesSent)
 {
+	time_t now = time(NULL);
+	if (now == -1)
+	{
+		Log::err("time(): %s", strerror(errno));
+		return;
+	}
+	tm splitTime;
+	if (localtime_r(&now, &splitTime) == nullptr)
+	{
+		Log::err("localtime_r(): %s", "Failed!");
+		return;
+	}
+	
+	char buffer[29];
+	size_t len = strftime(buffer, 29, "[%d/%b/%Y:%T %z]", &splitTime);
+	if(len != 28)
+	{
+		Log::err("strftime(): %s", "Incorrect date length");
+		return;
+	}
+	
 	if (bytesSent > 0)
 	{
-		//Log::info("%s - %s [dateformat] \"%s\" %d %d", client, user, date, request, status, bytesSent);
+		Log::info("%s - %s %s \"%s\" %d %d", client, user, buffer, request, status, bytesSent);
 	}
 	else
 	{
-		//Log::info("%s - %s [dateformat] \"%s\" %d -", client, user, date, request, status);
+		Log::info("%s - %s %s \"%s\" %d -", client, user, buffer, request, status);
 	}
 }
 

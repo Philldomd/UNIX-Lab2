@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 class MimeFinder;
@@ -16,4 +17,5 @@ public:
 	void shutdown();
 	
 private:
+	void logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, int status);
 };

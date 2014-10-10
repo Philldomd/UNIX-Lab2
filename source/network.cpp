@@ -151,7 +151,9 @@ void Network::startListen()
 				}
 			}
 			else
-			{				
+			{
+				int status = 200;
+				
 				char buffer[1024];
 				ssize_t receivedBytes = recv(events[n].data.fd, buffer, 1024, 0);
 				if (receivedBytes == -1)
@@ -196,15 +198,22 @@ void Network::startListen()
 				
 				if (file == -1)
 				{
-					Log::err("open(): %s", strerror(errno));
-					if (close(events[n].data.fd) == -1)
+					status = 404;
+					file = open("/404.html", O_RDONLY);
+					
+					if (file == -1)
 					{
-						Log::err("close(): %s", strerror(errno));
+						Log::err("open(): %s, Failed to open 404.html", strerror(errno));
+						
+						if (close(events[n].data.fd) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						continue;
 					}
-					continue;
 				}
 				
-				const char header[] = "HTTP/1.1 200 OK\r\n";
+				const char header[] = "HTTP/1.0 200 OK\r\n";
 				if (send(events[n].data.fd, header, sizeof(header), 0) == -1)
 				{
 					Log::err("send(): %s", strerror(errno));
@@ -251,23 +260,8 @@ void Network::startListen()
 					}
 					close(file);
 					continue;
-				}
-				
-				int error;
-				sockaddr_storage addrstorage;
-				socklen_t socklen = sizeof(addrstorage);
-				error = getpeername(events[n].data.fd, (sockaddr*)&addrstorage, &socklen);
-				if(error == -1)
-				{
-					Log::err("getnameinfo(): %s", strerror(errno));
-				}
-				char namebuff[NI_MAXHOST];
-				error = getnameinfo((sockaddr*)&addrstorage, sizeof(addrstorage), namebuff, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-				if(error != 0)
-				{
-					Log::err("getnameinfo(): %s", gai_strerror(error));
-				}
-				
+				}				
+				logStatus(buffer, receivedBytes, events[n].data.fd, bytesSent, status);
 				if (close(events[n].data.fd) == -1)
 				{
 					Log::err("close(): %s", strerror(errno));
@@ -277,21 +271,41 @@ void Network::startListen()
 				{
 					Log::err("close(): %s", strerror(errno));
 				}
-				
-				char* linePos = (char*)memchr(buffer, '\r', receivedBytes);
-				if (linePos == nullptr)
-				{
-					buffer[receivedBytes - 1] = '\0';
-				}
-				else
-				{
-					*linePos = '\0';
-				}
-			
-				Log::connection(namebuff, "-", buffer, 200, bytesSent);
 			}
 		}
 	}
+}
+
+void Network::logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, int status)
+{
+	int error;
+	sockaddr_storage addrstorage;
+	socklen_t socklen = sizeof(addrstorage);
+	
+	error = getpeername(fd, (sockaddr*)&addrstorage, &socklen);
+	if(error == -1)
+	{
+		Log::err("getnameinfo(): %s", strerror(errno));
+	}
+	
+	char namebuff[NI_MAXHOST];
+	error = getnameinfo((sockaddr*)&addrstorage, sizeof(addrstorage), namebuff, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+	if(error != 0)
+	{
+		Log::err("getnameinfo(): %s", gai_strerror(error));
+	}
+	
+	char* linePos = (char*)memchr(buffer, '\r', bufflen);
+	if (linePos == nullptr)
+	{
+		buffer[bufflen - 1] = '\0';
+	}
+	else
+	{
+		*linePos = '\0';
+	}
+	
+	Log::connection(namebuff, "-", buffer, status, bytesSent);
 }
 
 void Network::shutdown()

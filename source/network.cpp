@@ -190,6 +190,15 @@ void Network::startListen()
 					}
 					continue;
 				}
+				else if (receivedBytes == 0)
+				{
+					Log::info("Closing disconnected socket");
+					if (close(events[n].data.fd) == -1)
+					{
+						Log::err("close(): %s", strerror(errno));
+					}
+					continue;
+				}
 				
 				char* rPos = (char*)memchr(buffer, '\r', receivedBytes);
 				char* nPos = (char*)memchr(buffer, '\n', receivedBytes);

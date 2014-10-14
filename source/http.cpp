@@ -196,32 +196,36 @@ RequestErr readRequestLine(const char* line, size_t len, RequestResult &result)
 	}
 	
 	char* ws2 = memlws(nonWs, endPos - nonWs);
-	if (ws2 == nullptr)
-	{
-		// HTTP/0.9
-		return RequestErr::NOT_IMPLEMENTED;
-	}
 	
 	const char* requestURI = nonWs;
-	size_t requestURILen = ws2 - nonWs;
-	
-	nonWs = memnonlws(ws2, endPos - ws2);
-	if (nonWs == nullptr)
-	{
-		return RequestErr::BAD_REQUEST;
-	}
-	
-	const char* version = nonWs;
-	size_t versionLen = endPos - nonWs;
-	
-	if (versionLen != 8 || (memcmp(version, "HTTP/1.0", versionLen) != 0
-		&& memcmp(version, "HTTP/1.1", versionLen) != 0))
-	{
-		printf("Strange version: %.8s\n", version);
-		return RequestErr::NOT_IMPLEMENTED;
-	}
+	size_t requestURILen;
 	
 	result.version = HttpVersion::V1_0;
+	if (ws2 == nullptr)
+	{
+		result.version = HttpVersion::V0_9;
+		requestURILen = endPos - nonWs;
+	}
+	else
+	{
+		requestURILen = ws2 - nonWs;
+		
+		nonWs = memnonlws(ws2, endPos - ws2);
+		if (nonWs == nullptr)
+		{
+			return RequestErr::BAD_REQUEST;
+		}
+		
+		const char* version = nonWs;
+		size_t versionLen = endPos - nonWs;
+		
+		if (versionLen != 8 || (memcmp(version, "HTTP/1.0", versionLen) != 0
+			&& memcmp(version, "HTTP/1.1", versionLen) != 0))
+		{
+			printf("Strange version: %.8s\n", version);
+			return RequestErr::NOT_IMPLEMENTED;
+		}
+	}
 	
 	int fragPos = identifyFragment(requestURI, requestURILen);
 	if (fragPos != -1)

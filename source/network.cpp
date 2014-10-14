@@ -216,6 +216,7 @@ void Network::startListen()
 				{
 					requestLineLen = receivedBytes;
 					status = RequestErr::BAD_REQUEST;
+					res.version = HttpVersion::V1_0;
 				}
 				else
 				{
@@ -287,33 +288,7 @@ void Network::startListen()
 						continue;
 					}
 				}
-				
-				char headerBuff[1024];
-				int headerLen = snprintf(headerBuff, sizeof(headerBuff), "HTTP/1.0 %3.3d %s\r\n", (int)status, getStatusStr(status));
-				
-				const char* mimeType = mimeFinder->findMimeType(dup(file), path);
-				if (lseek(file, 0, SEEK_SET) == -1)
-				{
-					Log::err("lseek(): %s", strerror(errno));
 					
-					if (close(file) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					
-					continue;
-				}
-				if (mimeType != nullptr)
-				{
-					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen,
-						"Content-Type: %s\r\n", mimeType);
-				}
-				
 				struct stat fileStat;
 				if (fstat(file, &fileStat) == -1)
 				{
@@ -332,23 +307,52 @@ void Network::startListen()
 					continue;
 				}
 				
-				headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "Content-Length: %ld\r\n\r\n", fileStat.st_size);
-				
-				if (send(events[n].data.fd, headerBuff, headerLen, 0) == -1)
+				if (res.version >= HttpVersion::V1_0)
 				{
-					Log::err("send(): %s", strerror(errno));
+					char headerBuff[1024];
+					int headerLen = snprintf(headerBuff, sizeof(headerBuff), "HTTP/1.0 %3.3d %s\r\n", (int)status, getStatusStr(status));
 					
-					if (close(file) == -1)
+					const char* mimeType = mimeFinder->findMimeType(dup(file), path);
+					if (lseek(file, 0, SEEK_SET) == -1)
 					{
-						Log::err("close(): %s", strerror(errno));
+						Log::err("lseek(): %s", strerror(errno));
+						
+						if (close(file) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						
+						if (close(events[n].data.fd) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						
+						continue;
+					}
+					if (mimeType != nullptr)
+					{
+						headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen,
+							"Content-Type: %s\r\n", mimeType);
 					}
 					
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
+					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "Content-Length: %ld\r\n\r\n", fileStat.st_size);
 					
-					continue;
+					if (send(events[n].data.fd, headerBuff, headerLen, 0) == -1)
+					{
+						Log::err("send(): %s", strerror(errno));
+						
+						if (close(file) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						
+						if (close(events[n].data.fd) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						
+						continue;
+					}
 				}
 				
 				size_t bytesSent;

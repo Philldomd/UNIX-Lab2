@@ -354,21 +354,24 @@ void Network::startListen()
 				}
 				
 				size_t bytesSent;
-				if ((bytesSent = sendfile(events[n].data.fd, file, nullptr, fileStat.st_size)) == -1)
+				if(res.method == HttpMethod::GET)
 				{
-					Log::err("sendfile(): %s", strerror(errno));
-					
-					if (close(file) == -1)
+					if ((bytesSent = sendfile(events[n].data.fd, file, nullptr, fileStat.st_size)) == -1)
 					{
-						Log::err("close(): %s", strerror(errno));
+						Log::err("sendfile(): %s", strerror(errno));
+						
+						if (close(file) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						
+						if (close(events[n].data.fd) == -1)
+						{
+							Log::err("close(): %s", strerror(errno));
+						}
+						
+						continue;
 					}
-					
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					
-					continue;
 				}
 				
 				logStatus(buffer, requestLineLen, events[n].data.fd, bytesSent, (int)status);

@@ -176,11 +176,11 @@ RequestErr readRequestLine(const char* line, size_t len, RequestResult &result)
 	
 	size_t methodLen = ws1 - line;
 	
-	if (methodLen == 3 || memcmp(line, "GET", methodLen) == 0)
+	if (methodLen == 3 && memcmp(line, "GET", methodLen) == 0)
 	{
 		result.method = HttpMethod::GET;
 	}
-	else if (methodLen == 4 || memcmp(line, "HEAD", methodLen) == 0)
+	else if (methodLen == 4 && memcmp(line, "HEAD", methodLen) == 0)
 	{
 		result.method = HttpMethod::HEAD;
 	}

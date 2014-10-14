@@ -311,16 +311,13 @@ void Network::startListen()
 				if (mimeType != nullptr)
 				{
 					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen,
-						"Content-Type: %s\r\n\r\n", mimeType);
-				}
-				else
-				{
-					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "\r\n\r\n");
+						"Content-Type: %s\r\n", mimeType);
 				}
 				
-				if (send(events[n].data.fd, headerBuff, headerLen, 0) == -1)
+				struct stat fileStat;
+				if (fstat(file, &fileStat) == -1)
 				{
-					Log::err("send(): %s", strerror(errno));
+					Log::err("fstat(): %s", strerror(errno));
 					
 					if (close(file) == -1)
 					{
@@ -335,10 +332,11 @@ void Network::startListen()
 					continue;
 				}
 				
-				struct stat fileStat;
-				if (fstat(file, &fileStat) == -1)
+				headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "Content-Length: %ld\r\n\r\n", fileStat.st_size);
+				
+				if (send(events[n].data.fd, headerBuff, headerLen, 0) == -1)
 				{
-					Log::err("fstat(): %s", strerror(errno));
+					Log::err("send(): %s", strerror(errno));
 					
 					if (close(file) == -1)
 					{

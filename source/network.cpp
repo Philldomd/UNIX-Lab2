@@ -191,8 +191,28 @@ void Network::startListen()
 					continue;
 				}
 				
+				char* rPos = (char*)memchr(buffer, '\r', receivedBytes);
+				char* nPos = (char*)memchr(buffer, '\n', receivedBytes);
+				
+				char* lineEndPos = nPos;
+				if (nPos == nullptr || (rPos != nullptr && rPos < nPos))
+				{
+					lineEndPos = rPos;
+				}
+				
 				RequestResult res;
-				RequestErr status = readRequestLine(buffer, receivedBytes, res);
+				RequestErr status;
+				size_t requestLineLen;
+				if (lineEndPos == nullptr)
+				{
+					requestLineLen = receivedBytes;
+					status = RequestErr::BAD_REQUEST;
+				}
+				else
+				{
+					requestLineLen = lineEndPos - buffer;
+					status = readRequestLine(buffer, requestLineLen, res);
+				}
 				
 				char pathBuff[1024];
 				const char* path = nullptr;
@@ -342,7 +362,7 @@ void Network::startListen()
 					continue;
 				}
 				
-				logStatus(buffer, receivedBytes, events[n].data.fd, bytesSent, (int)status);
+				logStatus(buffer, requestLineLen, events[n].data.fd, bytesSent, (int)status);
 				
 				if (close(events[n].data.fd) == -1)
 				{
@@ -377,15 +397,7 @@ void Network::logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, 
 		Log::err("getnameinfo(): %s", gai_strerror(error));
 	}
 	
-	char* linePos = (char*)memchr(buffer, '\r', bufflen);
-	if (linePos == nullptr)
-	{
-		buffer[bufflen - 1] = '\0';
-	}
-	else
-	{
-		*linePos = '\0';
-	}
+	buffer[bufflen] = '\0';
 	
 	Log::connection(namebuff, "-", buffer, status, bytesSent);
 }

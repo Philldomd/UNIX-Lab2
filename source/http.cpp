@@ -1,5 +1,6 @@
 #include "http.h"
 
+#include <cstdio>
 #include <cstring>
 
 int identifyFragment(const char* string, size_t stringlen)
@@ -129,19 +130,57 @@ int unescape(const char* string, char* output, size_t stringlen)
 	return out - output;
 }
 
+char* memlws(const char* s, size_t n)
+{
+	char* space = (char*)memchr(s, ' ', n);
+	char* tab = (char*)memchr(s, '\t', n);
+	
+	if (space == nullptr)
+	{
+		return tab;
+	}
+	else if (tab == nullptr)
+	{
+		return space;
+	}
+	
+	return tab < space ? tab : space;
+}
+
+char* memnonlws(const char* s, size_t n)
+{
+	const char* endPos = s + n;
+	while (s < endPos)
+	{
+		if (*s != ' ' && *s != '\t')
+		{
+			return (char*)s;
+		}
+		
+		++s;
+	}
+	
+	return nullptr;
+}
+
 RequestErr readRequestLine(const char* line, size_t len, RequestResult &result)
 {
-	char* sp1 = (char*)memchr(line, ' ', len);
-	if (sp1 == nullptr)
+	const char* endPos = line + len;
+	
+	char* ws1 = memlws(line, len);
+	
+	if (ws1 == nullptr)
 	{
 		return RequestErr::BAD_REQUEST;
 	}
 	
-	if ((sp1 - line) == 3 || memcmp(line, "GET", 3) == 0)
+	size_t methodLen = ws1 - line;
+	
+	if (methodLen == 3 || memcmp(line, "GET", methodLen) == 0)
 	{
 		result.method = HttpMethod::GET;
 	}
-	else if ((sp1 - line) == 4 || memcmp(line, "HEAD", 4) == 0)
+	else if (methodLen == 4 || memcmp(line, "HEAD", methodLen) == 0)
 	{
 		result.method = HttpMethod::HEAD;
 	}
@@ -150,33 +189,35 @@ RequestErr readRequestLine(const char* line, size_t len, RequestResult &result)
 		return RequestErr::NOT_IMPLEMENTED;
 	}
 	
-	len -= (sp1 + 1) - line;
-	line = sp1 + 1;
-	
-	char* sp2 = (char*)memchr(line, ' ', len);
-	if (sp2 == nullptr)
+	char* nonWs = memnonlws(ws1, endPos - ws1);
+	if (nonWs == nullptr)
 	{
 		return RequestErr::BAD_REQUEST;
 	}
 	
-	const char* requestURI = line;
-	size_t requestURILen = sp2 - line;
+	char* ws2 = memlws(nonWs, endPos - nonWs);
+	if (ws2 == nullptr)
+	{
+		// HTTP/0.9
+		return RequestErr::NOT_IMPLEMENTED;
+	}
 	
-	len -= (sp2 + 1) - line;
-	line = sp2 + 1;
+	const char* requestURI = nonWs;
+	size_t requestURILen = ws2 - nonWs;
 	
-	char* crlf = (char*)memchr(line, '\r', len);
-	if (crlf == nullptr)
+	nonWs = memnonlws(ws2, endPos - ws2);
+	if (nonWs == nullptr)
 	{
 		return RequestErr::BAD_REQUEST;
 	}
 	
-	const char* version = line;
-	size_t versionLen = crlf - line;
+	const char* version = nonWs;
+	size_t versionLen = endPos - nonWs;
 	
-	if (versionLen != 8 || (memcmp(version, "HTTP/1.0", 8) != 0
-		&& memcmp(version, "HTTP/1.1", 8) != 0))
+	if (versionLen != 8 || (memcmp(version, "HTTP/1.0", versionLen) != 0
+		&& memcmp(version, "HTTP/1.1", versionLen) != 0))
 	{
+		printf("Strange version: %.8s\n", version);
 		return RequestErr::NOT_IMPLEMENTED;
 	}
 	

@@ -51,8 +51,6 @@ int main(int argc,char* argv[])
 	MimeFinder mimeFinder;
 	mimeFinder.init();
 	
-	Network net(port, &mimeFinder);
-	
 	if(daemon)
 	{
 		daemonizeAndClearFiles();
@@ -64,6 +62,8 @@ int main(int argc,char* argv[])
 		Log::open(argv[0], LOG_CONS | LOG_PERROR, LOG_USER);
 		Log::info("Server started at port: %hu", port);
 	}
+	
+	Network net(port, &mimeFinder);
 	
 	if(chroot(conf.getRootPath()) == -1)
 	{

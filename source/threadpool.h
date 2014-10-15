@@ -16,6 +16,11 @@ enum threadpool_destroy_flag_t
 	threadpool_graceful 		= 1,
 };
 
-threadpool_t *threadpool_create(int thread_count, int queue_size, int flags);
-int threadpool_add(threadpool_t *pool, void (*function) (void*), void *arg);
+enum threadpool_add_blocking_t
+{
+	threadpool_blocking = 1,
+};
+
+threadpool_t *threadpool_create(int thread_count, int queue_size);
+int threadpool_add(threadpool_t *pool, void (*function) (void*), void *arg, int flag);
 int threadpool_destroy(threadpool_t *pool, int flags);

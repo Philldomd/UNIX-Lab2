@@ -19,6 +19,7 @@ struct threadpool_task_t
 struct threadpool_t {
 	pthread_mutex_t lock;
 	pthread_cond_t notify;
+	pthread_cond_t blocking;
 	pthread_t *threads;
 	threadpool_task_t *queue;
 	int thread_count;
@@ -33,9 +34,9 @@ struct threadpool_t {
 static void *threadpool_thread(void *threadpool);
 int threadpool_free(threadpool_t *pool);
 int threadpool_join(threadpool_t *pool, int flags);
-int threadpool_add_task(threadpool_t *pool, void (*funtion)(void *), void *arg);
+int threadpool_add_task(threadpool_t *pool, void (*funtion)(void *), void *arg, int flag);
 
-threadpool_t *threadpool_create(int thread_count, int queue_size, int flags)
+threadpool_t *threadpool_create(int thread_count, int queue_size)
 {
 	threadpool_t *pool;
 	int i;
@@ -59,6 +60,7 @@ threadpool_t *threadpool_create(int thread_count, int queue_size, int flags)
 	
 	if((pthread_mutex_init(&(pool->lock), NULL) != 0) ||
 		(pthread_cond_init(&(pool->notify), NULL) != 0) ||
+		(pthread_cond_init(&(pool->blocking), NULL) != 0) ||
 		(pool->threads == NULL) ||
 		(pool->queue == NULL))
 	{
@@ -82,12 +84,12 @@ threadpool_t *threadpool_create(int thread_count, int queue_size, int flags)
 	return pool;
 }
 
-int threadpool_add(threadpool_t *pool, void (*function)(void *), void *arg)
+int threadpool_add(threadpool_t *pool, void (*function)(void *), void *arg, int flag)
 {
 	int err = 0;
 	
 	
-	if(pool == NULL || function || NULL)
+	if(pool == NULL || function == NULL)
 	{
 		return threadpool_invalid;
 	}
@@ -97,7 +99,7 @@ int threadpool_add(threadpool_t *pool, void (*function)(void *), void *arg)
 		return threadpool_lock_failure;
 	}
 	
-	err = threadpool_add_task(pool, function, arg);
+	err = threadpool_add_task(pool, function, arg, flag);
 	
 	if(pthread_mutex_unlock(&pool->lock) != 0)
 	{
@@ -107,7 +109,7 @@ int threadpool_add(threadpool_t *pool, void (*function)(void *), void *arg)
 	return err;
 }
 
-int threadpool_add_task(threadpool_t *pool, void (*function)(void *), void *arg)
+int threadpool_add_task(threadpool_t *pool, void (*function)(void *), void *arg, int flag)
 {
 	int next = pool->tail +1;
 	
@@ -115,7 +117,17 @@ int threadpool_add_task(threadpool_t *pool, void (*function)(void *), void *arg)
 	
 	if(pool->count == pool->queue_size)
 	{
-		return threadpool_queue_full;
+		if(flag == threadpool_blocking)
+		{
+			while(pool->count == pool->queue_size)
+			{
+				pthread_cond_wait(&pool->blocking, &pool->lock);
+			}
+		}
+		else
+		{
+			return threadpool_queue_full;
+		}
 	}
 	
 	if(pool->shutdown)
@@ -201,6 +213,7 @@ int threadpool_free(threadpool_t *pool)
 		pthread_mutex_lock(&(pool->lock));
 		pthread_mutex_destroy(&(pool->lock));
 		pthread_cond_destroy(&(pool->notify));
+		pthread_cond_destroy(&(pool->blocking));
 	}
 	free(pool);
 	return 0;
@@ -232,6 +245,11 @@ static void *threadpool_thread(void *threadpool)
 		pool->head += 1;
 		pool->head = (pool->head == pool->queue_size) ? 0 : pool->head;
 		pool->count -= 1;
+		
+		if(pthread_cond_signal(&(pool->blocking)) != 0)
+		{
+			break;
+		}
 		
 		pthread_mutex_unlock(&(pool->lock));
 		

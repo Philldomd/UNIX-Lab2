@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "MimeFinder.h"
 #include "network.h"
+#include "threadpool.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -14,13 +15,15 @@
 #include <unistd.h>
 
 #define NOBODY 65534
+#define NUM_THRD 7
+#define QUEUE_ELEM 1024
 
 int main(int argc,char* argv[])
 {
 	struct sigaction act = {};
 	act.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &act, NULL);
-		
+	
 	Config conf("conf.yaml");
 	
 	int opt;

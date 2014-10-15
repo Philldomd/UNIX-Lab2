@@ -24,6 +24,7 @@ private:
 public:
 	Network(uint16_t portNr, MimeFinder* mimeFinder);
 	Err startListen();
+	Err startAccept();
 	void shutdown();
 	
 private:

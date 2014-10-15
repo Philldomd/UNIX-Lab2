@@ -136,6 +136,11 @@ Network::Err Network::startListen()
 		return Err::Listen;
 	}
 	
+	return Err::OK;
+}
+
+Network::Err Network::startAccept()
+{
 	struct epoll_event ev;
 	struct epoll_event events[MAX_EVENTS];
 	int epollfd;

@@ -376,14 +376,14 @@ void Network::startListen()
 					}
 				}
 				
-				logStatus(buffer, requestLineLen, events[n].data.fd, bytesSent, (int)status);
-				
-				if (close(events[n].data.fd) == -1)
+				if(close(file) == -1)
 				{
 					Log::err("close(): %s", strerror(errno));
 				}
 				
-				if(close(file) == -1)
+				logStatus(buffer, requestLineLen, events[n].data.fd, bytesSent, (int)status);
+				
+				if (close(events[n].data.fd) == -1)
 				{
 					Log::err("close(): %s", strerror(errno));
 				}
@@ -402,6 +402,7 @@ void Network::logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, 
 	if(error == -1)
 	{
 		Log::err("getnameinfo(): %s", strerror(errno));
+		return;
 	}
 	
 	char namebuff[NI_MAXHOST];
@@ -409,6 +410,7 @@ void Network::logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, 
 	if(error != 0)
 	{
 		Log::err("getnameinfo(): %s", gai_strerror(error));
+		return;
 	}
 	
 	buffer[bufflen] = '\0';

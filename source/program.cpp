@@ -8,13 +8,18 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <signal.h>
 #include <syslog.h>
 #include <unistd.h>
 
 #define NOBODY 65534
 
 int main(int argc,char* argv[])
-{	
+{
+	struct sigaction act = {};
+	act.sa_handler = SIG_IGN;
+	sigaction(SIGPIPE, &act, NULL);
+		
 	Config conf("conf.yaml");
 	
 	int opt;

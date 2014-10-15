@@ -7,13 +7,23 @@ class MimeFinder;
 
 class Network
 {
+public:
+	enum class Err
+	{
+		OK = 0,
+		Listen,
+		Accept,
+		Setup,
+		Process,
+	};
+	
 private:
 	int acceptSocket;
 	MimeFinder* mimeFinder;
 
 public:
 	Network(uint16_t portNr, MimeFinder* mimeFinder);
-	void startListen();
+	Err startListen();
 	void shutdown();
 	
 private:

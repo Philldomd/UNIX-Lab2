@@ -128,20 +128,21 @@ const char* getStatusStr(RequestErr status)
 	}
 }
 
-void Network::startListen()
+Network::Err Network::startListen()
 {
 	if (listen(acceptSocket, 1) == -1)
 	{
 		Log::err("listen(): %s", strerror(errno));
-		return;
+		return Err::Listen;
 	}
+	
 	struct epoll_event ev;
 	struct epoll_event events[MAX_EVENTS];
 	int epollfd;
 	if((epollfd = epoll_create1(0)) ==  -1 )
 	{
 		Log::err("epoll_create1(): %s", strerror(errno));
-		return;
+		return Err::Setup;
 	}
 	
 	ev.events = EPOLLIN;
@@ -149,6 +150,7 @@ void Network::startListen()
 	if(epoll_ctl(epollfd, EPOLL_CTL_ADD, acceptSocket, &ev) == -1)
 	{
 		Log::err("epoll_ctl(): %s", strerror(errno));
+		return Err::Setup;
 	}
 	
 	while (true)
@@ -157,7 +159,9 @@ void Network::startListen()
 		if((nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1)) == -1)
 		{
 			Log::err("epoll_wait(): %s", strerror(errno));
+			return Err::Process;
 		}
+		
 		for(int n = 0; n < nfds; ++n)
 		{
 			int acceptedSocket;
@@ -166,7 +170,7 @@ void Network::startListen()
 				if((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
 				{
 					Log::err("accept(): %s", strerror(errno));
-					return;
+					return Err::Accept;
 				}
 				
 				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
@@ -174,7 +178,7 @@ void Network::startListen()
 				if(epoll_ctl(epollfd, EPOLL_CTL_ADD, acceptedSocket, &ev) == -1)
 				{
 					Log::err("epoll_ctl(): %s", strerror(errno));
-					return;
+					return Err::Process;
 				}
 			}
 			else

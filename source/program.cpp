@@ -97,7 +97,27 @@ int main(int argc,char* argv[])
 		exit(1);
 	}
 	
-	net.startListen();
+	switch (net.startListen())
+	{		
+	case Network::Err::OK:
+		break;
+		
+	case Network::Err::Listen:
+		Log::err("Failed to start listening");
+		break;
+		
+	case Network::Err::Accept:
+		Log::err("Failed to accept connection");
+		break;
+		
+	case Network::Err::Setup:
+		Log::err("Failed to setup network");
+		break;
+		
+	case Network::Err::Process:
+		Log::err("Error while processing connection");
+		break;
+	}
 	
 	Log::info("Server shutting down");
 	net.shutdown();

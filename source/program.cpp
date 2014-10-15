@@ -6,6 +6,8 @@
 
 #ifdef IO_MULT_THREAD_POOL
 #	include "ExecIOMultThreadPool.h"
+#elif defined(FORK)
+#	include "ExecFork.h"
 #else
 #	include "ExecIOMult.h"
 #endif
@@ -83,7 +85,7 @@ int main(int argc,char* argv[])
 		}
 		else
 		{
-			Log::open(argv[0], LOG_CONS, LOG_DAEMON);
+			Log::open(argv[0], LOG_CONS | LOG_PERROR, LOG_USER);
 		}
 		Log::debug("Server started at port: %hu", port);
 	}

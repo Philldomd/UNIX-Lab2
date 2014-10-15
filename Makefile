@@ -16,6 +16,11 @@ CFLAGS += -DIO_MULT_THREAD_POOL
 PROG := $(PROG)IOTP
 endif
 
+ifdef Fork
+CFLAGS += -DFORK
+PROG := $(PROG)Fork
+endif
+
 .PHONY: directories
 
 all: directories $(PROG)

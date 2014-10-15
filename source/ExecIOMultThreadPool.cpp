@@ -6,7 +6,7 @@
 #include <cstring>
 
 #define NUM_THRD 7
-#define QUEUE_ELEM 1024
+#define QUEUE_ELEM (2 * NUM_THRD)
 
 Network* ExecIOMultThreadPool::network = nullptr;
 

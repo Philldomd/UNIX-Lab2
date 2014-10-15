@@ -3,15 +3,39 @@
 #include <syslog.h>
 
 #include <cerrno>
-#include <cstdio>
 #include <cstdarg>
 #include <cstring>
 #include <ctime>
 
 int Log::facility = 0;
+bool Log::logToFile = false;
+FILE *Log::logFile = NULL;
+FILE *Log::errFile = NULL;
+
+void Log::openFile(const char* path)
+{
+	logToFile = true;
+	char logPath[512] = {};
+	strncat(logPath, path, strlen(path));
+	strncat(logPath, ".log", 4);
+	char errPath[512] = {};
+	strncat(errPath, path, strlen(path));
+	strncat(errPath, ".err", 4);
+	logFile = fopen(logPath, "a");
+	if(logFile == NULL)
+	{
+		printf("Error fopen(): %s", strerror(errno));
+	}
+	errFile = fopen(errPath, "a");
+	if(logFile == NULL)
+	{
+		printf("Error fopen(): %s", strerror(errno));
+	}
+}
 
 void Log::open(const char* ident, int option, int facility)
 {
+	logToFile = false;
 	Log::facility = facility;
 	openlog(ident, option, facility);
 }
@@ -77,7 +101,25 @@ void Log::connection(const char* client, const char* user,
 void Log::helpLog(int priority, const char* format, va_list ap)
 {
 	char buffer[512];
-	vsnprintf(buffer, sizeof(buffer), format, ap);
+	int length = vsnprintf(buffer, sizeof(buffer), format, ap);
 	
-	syslog(priority, "%s", buffer);
+	if(logToFile)
+	{
+		if((priority & (~facility)) == LOG_INFO)
+		{
+			fwrite(buffer, 1, length, logFile);
+			fwrite("\n", 1, 1, logFile);
+			fflush(logFile);
+		}
+		else 
+		{
+			fwrite(buffer, 1, length, errFile);
+			fwrite("\n", 1, 1, errFile);
+			fflush(errFile);
+		}
+	}
+	else if(!logToFile)
+	{
+		syslog(priority, "%s", buffer);
+	}
 }

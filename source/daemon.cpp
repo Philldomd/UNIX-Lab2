@@ -68,8 +68,6 @@ void daemonizeAndClearFiles()
 		close(fd);
 	}
 	
-	chdir("/");
-	
 	umask(0);
 	
 	open("/dev/null", O_RDWR);

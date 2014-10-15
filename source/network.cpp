@@ -131,7 +131,6 @@ Network::Err Network::startListen()
 		Log::err("listen(): %s", strerror(errno));
 		return Err::Listen;
 	}
-	
 	return Err::OK;
 }
 

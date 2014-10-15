@@ -2,13 +2,18 @@
 
 #include <cstdarg>
 #include <cstddef>
+#include <cstdio>
 
 class Log
 {
 private:
 	static int facility;
+	static bool logToFile;
+	static FILE* logFile;
+	static FILE* errFile;
 	
 public:
+	static void openFile(const char* path);
 	static void open(const char* ident, int option, int facility);
 
 	static void err(const char* format, ...);

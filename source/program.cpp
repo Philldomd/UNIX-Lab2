@@ -63,13 +63,27 @@ int main(int argc,char* argv[])
 	if(daemon)
 	{
 		daemonizeAndClearFiles();
-		Log::open(argv[0], LOG_CONS, LOG_DAEMON);
-		Log::info("Daemon server started at port: %hu", port);
+		if(logFile != nullptr)
+		{
+			Log::openFile(logFile);
+		}
+		else
+		{
+			Log::open(argv[0], LOG_CONS, LOG_DAEMON);
+		}
+		Log::debug("Daemon server started at port: %hu", port);
 	}
 	else
 	{
-		Log::open(argv[0], LOG_CONS | LOG_PERROR, LOG_USER);
-		Log::info("Server started at port: %hu", port);
+		if(logFile != nullptr)
+		{
+			Log::openFile(logFile);
+		}
+		else
+		{
+			Log::open(argv[0], LOG_CONS, LOG_DAEMON);
+		}
+		Log::debug("Server started at port: %hu", port);
 	}
 	
 	Network net(port, &mimeFinder);

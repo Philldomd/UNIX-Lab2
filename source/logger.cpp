@@ -8,6 +8,8 @@
 #include <ctime>
 
 int Log::facility = 0;
+pthread_mutex_t Log::lock;
+
 bool Log::logToFile = false;
 FILE *Log::logFile = NULL;
 FILE *Log::errFile = NULL;
@@ -38,6 +40,8 @@ void Log::open(const char* ident, int option, int facility)
 	logToFile = false;
 	Log::facility = facility;
 	openlog(ident, option, facility);
+	
+	pthread_mutex_init(&lock, NULL);
 }
 
 void Log::err(const char* format, ...)
@@ -102,6 +106,8 @@ void Log::helpLog(int priority, const char* format, va_list ap)
 {
 	char buffer[512];
 	int length = vsnprintf(buffer, sizeof(buffer), format, ap);
+
+	pthread_mutex_lock(&lock);
 	
 	if(logToFile)
 	{
@@ -118,8 +124,10 @@ void Log::helpLog(int priority, const char* format, va_list ap)
 			fflush(errFile);
 		}
 	}
-	else if(!logToFile)
+	else
 	{
 		syslog(priority, "%s", buffer);
 	}
+	
+	pthread_mutex_unlock(&lock);
 }

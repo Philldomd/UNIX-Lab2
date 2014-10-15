@@ -1,10 +1,14 @@
 #include "config.h"
 #include "daemon.h"
-#include "ExecIOMult.h"
 #include "logger.h"
 #include "MimeFinder.h"
 #include "network.h"
-#include "threadpool.h"
+
+#ifdef IO_MULT_THREAD_POOL
+#	include "ExecIOMultThreadPool.h"
+#else
+#	include "ExecIOMult.h"
+#endif
 
 #include <cerrno>
 #include <cstdlib>
@@ -15,8 +19,6 @@
 #include <unistd.h>
 
 #define NOBODY 65534
-#define NUM_THRD 7
-#define QUEUE_ELEM 1024
 
 int main(int argc,char* argv[])
 {

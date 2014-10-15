@@ -1,5 +1,7 @@
 #pragma once
 
+#include <pthread.h>
+
 #include <cstdarg>
 #include <cstddef>
 #include <cstdio>
@@ -11,6 +13,8 @@ private:
 	static bool logToFile;
 	static FILE* logFile;
 	static FILE* errFile;
+	
+	static pthread_mutex_t lock;
 	
 public:
 	static void openFile(const char* path);

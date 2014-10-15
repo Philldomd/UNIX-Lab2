@@ -1,5 +1,7 @@
 *~
 build/*
-ServerSebPhi
+ServerSebPhi*
 Zoon10/
 magic.mgc
+*.log
+*.err

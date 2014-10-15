@@ -34,6 +34,8 @@ void MimeFinder::init()
 		fprintf(stderr, "magic_compile(): %s\n", magic_error(cookie));
 		exit(1);
 	}
+	
+	pthread_mutex_init(&lock, NULL);
 }
 
 void MimeFinder::shutdown()
@@ -84,7 +86,20 @@ const char* MimeFinder::findMimeType(int fd, const char* filename)
 		return ret;
 	}
 	
+	int err;
+	if ((err = pthread_mutex_lock(&lock)) != 0)
+	{
+		Log::err("pthread_mutex_lock(): %s", strerror(err));
+		return nullptr;
+	}
+	
 	ret = magic_descriptor(cookie, fd);
+	
+	if ((err = pthread_mutex_unlock(&lock)) != 0)
+	{
+		Log::err("pthread_mutex_unlock(): %s", strerror(err));
+	}
+	
 	if (ret == nullptr)
 	{
 		Log::err("magic_descriptor(): %s", magic_error(cookie));

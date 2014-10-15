@@ -1,6 +1,7 @@
 CC = g++
 LD = g++
 CFLAGS = -g -Wall -std=c++0x
+
 LDFLAGS =
 LIBS = -lmagic -lpthread
 RM = /bin/rm -f
@@ -9,6 +10,11 @@ OUTD = build
 SRCS = $(wildcard $(SRCSD)/*.cpp)
 OBJS = $(patsubst $(SRCSD)/%.cpp,$(OUTD)/%.o,$(SRCS))
 PROG = ServerSebPhi
+
+ifdef ThreadPool
+CFLAGS += -DIO_MULT_THREAD_POOL
+PROG := $(PROG)IOTP
+endif
 
 .PHONY: directories
 

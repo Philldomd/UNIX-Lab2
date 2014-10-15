@@ -2,7 +2,7 @@ CC = g++
 LD = g++
 CFLAGS = -g -Wall -std=c++0x
 LDFLAGS =
-LIBS = -lmagic
+LIBS = -lmagic -lpthread
 RM = /bin/rm -f
 SRCSD = source
 OUTD = build

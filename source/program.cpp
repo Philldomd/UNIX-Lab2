@@ -1,5 +1,6 @@
 #include "config.h"
 #include "daemon.h"
+#include "ExecIOMult.h"
 #include "logger.h"
 #include "MimeFinder.h"
 #include "network.h"
@@ -103,26 +104,18 @@ int main(int argc,char* argv[])
 	}
 	else
 	{
-		switch (net.startAccept())
+		Exec exec;
+		if (exec.init(&net) != ExecErr::OK)
 		{
-		case Network::Err::OK:
-			break;
-			
-		case Network::Err::Accept:
-			Log::err("Failed to accept connection");
-			break;
-			
-		case Network::Err::Setup:
-			Log::err("Failed to setup network");
-			break;
-			
-		case Network::Err::Process:
-			Log::err("Error while processing connection");
-			break;
-		
-		default:
-			Log::err("Unknown error while handling connections");
-			break;
+			Log::err("Exec init error!");
+		}
+		else if (exec.run() != ExecErr::OK)
+		{
+			Log::err("Exec run error");
+		}
+		else if (exec.shutdown() != ExecErr::OK)
+		{
+			Log::err("Exec shutdown error!");
 		}
 	}
 	

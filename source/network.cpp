@@ -11,14 +11,10 @@
 
 #include <fcntl.h>
 #include <netdb.h>
-#include <sys/epoll.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
-
-#define MAX_EVENTS 8
 
 Network::Network(uint16_t portNr, MimeFinder* mimeFinder)
 	: mimeFinder(mimeFinder)
@@ -139,265 +135,228 @@ Network::Err Network::startListen()
 	return Err::OK;
 }
 
-Network::Err Network::startAccept()
+int Network::accept()
 {
-	struct epoll_event ev;
-	struct epoll_event events[MAX_EVENTS];
-	int epollfd;
-	if((epollfd = epoll_create1(0)) ==  -1 )
+	return ::accept(acceptSocket, nullptr, nullptr);
+}
+
+void Network::handleConnection(int connSock)
+{
+	char buffer[1024];
+	ssize_t receivedBytes = recv(connSock, buffer, 1024, 0);
+	if (receivedBytes == -1)
 	{
-		Log::err("epoll_create1(): %s", strerror(errno));
-		return Err::Setup;
-	}
-	
-	ev.events = EPOLLIN;
-	ev.data.fd = acceptSocket;
-	if(epoll_ctl(epollfd, EPOLL_CTL_ADD, acceptSocket, &ev) == -1)
-	{
-		Log::err("epoll_ctl(): %s", strerror(errno));
-		return Err::Setup;
-	}
-	
-	while (true)
-	{
-		int nfds;
-		if((nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1)) == -1)
+		Log::err("recv(): %s", strerror(errno));
+		if (close(connSock) == -1)
 		{
-			Log::err("epoll_wait(): %s", strerror(errno));
-			return Err::Process;
+			Log::err("close(): %s", strerror(errno));
 		}
-		
-		for(int n = 0; n < nfds; ++n)
+		return;
+	}
+	else if (receivedBytes == 0)
+	{
+		Log::info("Closing disconnected socket");
+		if (close(connSock) == -1)
 		{
-			int acceptedSocket;
-			if(events[n].data.fd == acceptSocket)
+			Log::err("close(): %s", strerror(errno));
+		}
+		return;
+	}
+	
+	char* rPos = (char*)memchr(buffer, '\r', receivedBytes);
+	char* nPos = (char*)memchr(buffer, '\n', receivedBytes);
+	
+	char* lineEndPos = nPos;
+	if (nPos == nullptr || (rPos != nullptr && rPos < nPos))
+	{
+		lineEndPos = rPos;
+	}
+	
+	RequestResult res;
+	RequestErr status;
+	size_t requestLineLen;
+	if (lineEndPos == nullptr)
+	{
+		requestLineLen = receivedBytes;
+		status = RequestErr::BAD_REQUEST;
+		res.version = HttpVersion::V1_0;
+	}
+	else
+	{
+		requestLineLen = lineEndPos - buffer;
+		status = readRequestLine(buffer, requestLineLen, res);
+	}
+	
+	char pathBuff[1024];
+	const char* path = nullptr;
+	
+	switch (status)
+	{
+	case RequestErr::OK:
+		{
+			int unescapedLen = unescape(res.path, pathBuff, res.pathLen);
+			if (unescapedLen == -1)
 			{
-				if((acceptedSocket = accept(acceptSocket, nullptr, nullptr)) == -1)
-				{
-					Log::err("accept(): %s", strerror(errno));
-					return Err::Accept;
-				}
-				
-				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-				ev.data.fd = acceptedSocket;
-				if(epoll_ctl(epollfd, EPOLL_CTL_ADD, acceptedSocket, &ev) == -1)
-				{
-					Log::err("epoll_ctl(): %s", strerror(errno));
-					return Err::Process;
-				}
+				status = RequestErr::BAD_REQUEST;
+				path = "/400.html";
 			}
 			else
-			{
-				char buffer[1024];
-				ssize_t receivedBytes = recv(events[n].data.fd, buffer, 1024, 0);
-				if (receivedBytes == -1)
-				{
-					Log::err("recv(): %s", strerror(errno));
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					continue;
-				}
-				else if (receivedBytes == 0)
-				{
-					Log::info("Closing disconnected socket");
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					continue;
-				}
-				
-				char* rPos = (char*)memchr(buffer, '\r', receivedBytes);
-				char* nPos = (char*)memchr(buffer, '\n', receivedBytes);
-				
-				char* lineEndPos = nPos;
-				if (nPos == nullptr || (rPos != nullptr && rPos < nPos))
-				{
-					lineEndPos = rPos;
-				}
-				
-				RequestResult res;
-				RequestErr status;
-				size_t requestLineLen;
-				if (lineEndPos == nullptr)
-				{
-					requestLineLen = receivedBytes;
-					status = RequestErr::BAD_REQUEST;
-					res.version = HttpVersion::V1_0;
-				}
-				else
-				{
-					requestLineLen = lineEndPos - buffer;
-					status = readRequestLine(buffer, requestLineLen, res);
-				}
-				
-				char pathBuff[1024];
-				const char* path = nullptr;
-				
-				switch (status)
-				{
-				case RequestErr::OK:
-					{
-						int unescapedLen = unescape(res.path, pathBuff, res.pathLen);
-						if (unescapedLen == -1)
-						{
-							status = RequestErr::BAD_REQUEST;
-							path = "/400.html";
-						}
-						else
-						{						
-							pathBuff[unescapedLen] = 0;
-							path = pathBuff;
-						}
-					}
-					break;
-					
-				case RequestErr::BAD_REQUEST:
-					path = "/400.html";
-					break;
-					
-				case RequestErr::FORBIDDEN:
-					path = "/403.html";
-					break;
-					
-				case RequestErr::NOT_FOUND:
-					path = "/404.html";
-					break;
-					
-				case RequestErr::INTERNAL:
-					path = "/500.html";
-					break;
-					
-				case RequestErr::NOT_IMPLEMENTED:
-					path = "/501.html";
-					break;
-				}
-				
-				if (strcmp(path, "/") == 0)
-				{
-					path = "/index.html";
-				}
-				
-				int file = open(path, O_RDONLY);
-				if (file == -1)
-				{
-					status = RequestErr::NOT_FOUND;
-					file = open("/404.html", O_RDONLY);
-					
-					if (file == -1)
-					{
-						Log::err("open(): %s, Failed to open 404.html", strerror(errno));
-						
-						if (close(events[n].data.fd) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						continue;
-					}
-				}
-					
-				struct stat fileStat;
-				if (fstat(file, &fileStat) == -1)
-				{
-					Log::err("fstat(): %s", strerror(errno));
-					
-					if (close(file) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					
-					if (close(events[n].data.fd) == -1)
-					{
-						Log::err("close(): %s", strerror(errno));
-					}
-					
-					continue;
-				}
-				
-				if (res.version >= HttpVersion::V1_0)
-				{
-					char headerBuff[1024];
-					int headerLen = snprintf(headerBuff, sizeof(headerBuff), "HTTP/1.0 %3.3d %s\r\n", (int)status, getStatusStr(status));
-					
-					const char* mimeType = mimeFinder->findMimeType(dup(file), path);
-					if (lseek(file, 0, SEEK_SET) == -1)
-					{
-						Log::err("lseek(): %s", strerror(errno));
-						
-						if (close(file) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						
-						if (close(events[n].data.fd) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						
-						continue;
-					}
-					if (mimeType != nullptr)
-					{
-						headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen,
-							"Content-Type: %s\r\n", mimeType);
-					}
-					
-					headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "Content-Length: %ld\r\n\r\n", fileStat.st_size);
-					
-					if (send(events[n].data.fd, headerBuff, headerLen, 0) == -1)
-					{
-						Log::err("send(): %s", strerror(errno));
-						
-						if (close(file) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						
-						if (close(events[n].data.fd) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						
-						continue;
-					}
-				}
-				
-				size_t bytesSent;
-				if(res.method == HttpMethod::GET)
-				{
-					if ((bytesSent = sendfile(events[n].data.fd, file, nullptr, fileStat.st_size)) == -1)
-					{
-						Log::err("sendfile(): %s", strerror(errno));
-						
-						if (close(file) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						
-						if (close(events[n].data.fd) == -1)
-						{
-							Log::err("close(): %s", strerror(errno));
-						}
-						
-						continue;
-					}
-				}
-				
-				if(close(file) == -1)
-				{
-					Log::err("close(): %s", strerror(errno));
-				}
-				
-				logStatus(buffer, requestLineLen, events[n].data.fd, bytesSent, (int)status);
-				
-				if (close(events[n].data.fd) == -1)
-				{
-					Log::err("close(): %s", strerror(errno));
-				}
+			{						
+				pathBuff[unescapedLen] = 0;
+				path = pathBuff;
 			}
 		}
+		break;
+		
+	case RequestErr::BAD_REQUEST:
+		path = "/400.html";
+		break;
+		
+	case RequestErr::FORBIDDEN:
+		path = "/403.html";
+		break;
+		
+	case RequestErr::NOT_FOUND:
+		path = "/404.html";
+		break;
+		
+	case RequestErr::INTERNAL:
+		path = "/500.html";
+		break;
+		
+	case RequestErr::NOT_IMPLEMENTED:
+		path = "/501.html";
+		break;
+	}
+	
+	if (strcmp(path, "/") == 0)
+	{
+		path = "/index.html";
+	}
+	
+	int file = open(path, O_RDONLY);
+	if (file == -1)
+	{
+		status = RequestErr::NOT_FOUND;
+		file = open("/404.html", O_RDONLY);
+		
+		if (file == -1)
+		{
+			Log::err("open(): %s, Failed to open 404.html", strerror(errno));
+			
+			if (close(connSock) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			return;
+		}
+	}
+		
+	struct stat fileStat;
+	if (fstat(file, &fileStat) == -1)
+	{
+		Log::err("fstat(): %s", strerror(errno));
+		
+		if (close(file) == -1)
+		{
+			Log::err("close(): %s", strerror(errno));
+		}
+		
+		if (close(connSock) == -1)
+		{
+			Log::err("close(): %s", strerror(errno));
+		}
+		
+		return;
+	}
+	
+	if (res.version >= HttpVersion::V1_0)
+	{
+		char headerBuff[1024];
+		int headerLen = snprintf(headerBuff, sizeof(headerBuff), "HTTP/1.0 %3.3d %s\r\n", (int)status, getStatusStr(status));
+		
+		const char* mimeType = mimeFinder->findMimeType(dup(file), path);
+		if (lseek(file, 0, SEEK_SET) == -1)
+		{
+			Log::err("lseek(): %s", strerror(errno));
+			
+			if (close(file) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			
+			if (close(connSock) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			
+			return;
+		}
+		if (mimeType != nullptr)
+		{
+			headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen,
+				"Content-Type: %s\r\n", mimeType);
+		}
+		
+		headerLen += snprintf(headerBuff + headerLen, sizeof(headerBuff) - headerLen, "Content-Length: %ld\r\n\r\n", fileStat.st_size);
+		
+		if (send(connSock, headerBuff, headerLen, 0) == -1)
+		{
+			Log::err("send(): %s", strerror(errno));
+			
+			if (close(file) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			
+			if (close(connSock) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			
+			return;
+		}
+	}
+	
+	size_t bytesSent;
+	if(res.method == HttpMethod::GET)
+	{
+		if ((bytesSent = sendfile(connSock, file, nullptr, fileStat.st_size)) == -1)
+		{
+			Log::err("sendfile(): %s", strerror(errno));
+			
+			if (close(file) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			
+			if (close(connSock) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			
+			return;
+		}
+	}
+	
+	if(close(file) == -1)
+	{
+		Log::err("close(): %s", strerror(errno));
+	}
+	
+	logStatus(buffer, requestLineLen, connSock, bytesSent, (int)status);
+	
+	if (close(connSock) == -1)
+	{
+		Log::err("close(): %s", strerror(errno));
+	}
+}
+
+void Network::shutdown()
+{
+	if(close(acceptSocket) == -1)
+	{
+		Log::err("close(): %s", strerror(errno));
 	}
 }
 
@@ -425,12 +384,4 @@ void Network::logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, 
 	buffer[bufflen] = '\0';
 	
 	Log::connection(namebuff, "-", buffer, status, bytesSent);
-}
-
-void Network::shutdown()
-{
-	if(close(acceptSocket) == -1)
-	{
-		Log::err("close(): %s", strerror(errno));
-	}
 }

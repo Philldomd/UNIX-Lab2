@@ -24,8 +24,11 @@ private:
 public:
 	Network(uint16_t portNr, MimeFinder* mimeFinder);
 	Err startListen();
-	Err startAccept();
+	int accept();
+	void handleConnection(int connSock);
 	void shutdown();
+	
+	int getAcceptSocket() const { return acceptSocket; }
 	
 private:
 	void logStatus(char* buffer, size_t bufflen, int fd, size_t bytesSent, int status);

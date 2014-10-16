@@ -46,8 +46,22 @@ ExecErr ExecFork::run()
 		
 		if (fork() == 0)
 		{
-			network->handleConnection(acceptedSocket);
-			exit(0);
+			Network::SocketData data;
+			data.fd = acceptedSocket;
+			data.readLen = 0;
+			while (true)
+			{
+				switch(network->handleConnection(&data))
+				{
+				case Network::Err::ReadMore:
+					break;
+					
+				case Network::Err::OK:
+				case Network::Err::Process:
+				default:
+					exit(0);
+				}
+			}
 		}
 		else
 		{

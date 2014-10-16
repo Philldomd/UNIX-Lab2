@@ -15,6 +15,15 @@ public:
 		Accept,
 		Setup,
 		Process,
+		ReadMore,
+	};
+	
+	const static size_t readBufSize = 1024;
+	struct SocketData
+	{
+		int fd;
+		char readBuf[readBufSize];
+		size_t readLen;
 	};
 	
 private:
@@ -25,7 +34,7 @@ public:
 	Network(uint16_t portNr, MimeFinder* mimeFinder);
 	Err startListen();
 	int accept();
-	void handleConnection(int connSock);
+	Err handleConnection(SocketData* conn);
 	void shutdown();
 	
 	int getAcceptSocket() const { return acceptSocket; }

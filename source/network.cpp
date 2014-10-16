@@ -139,10 +139,28 @@ int Network::accept()
 	return ::accept(acceptSocket, nullptr, nullptr);
 }
 
-void Network::handleConnection(int connSock)
+char* strnstr(char* haystack, char* needle, size_t hayLen)
 {
-	char buffer[1024];
-	ssize_t receivedBytes = recv(connSock, buffer, 1024, 0);
+	size_t needleLength = strlen(needle);
+	size_t stopPos = hayLen - needleLength;
+	
+	for (size_t i = 0; i <= stopPos; i++)
+	{
+		if (strncmp(haystack + i, needle, needleLength) == 0)
+		{
+			return haystack + i;
+		}
+	}
+	
+	return nullptr;
+}
+
+Network::Err Network::handleConnection(SocketData* conn)
+{
+	int connSock = conn->fd;
+	char* buffer = conn->readBuf;
+	size_t toRead = readBufSize - conn->readLen;
+	ssize_t receivedBytes = recv(connSock, buffer + conn->readLen, toRead, 0);
 	if (receivedBytes == -1)
 	{
 		Log::err("recv(): %s", strerror(errno));
@@ -150,7 +168,7 @@ void Network::handleConnection(int connSock)
 		{
 			Log::err("close(): %s", strerror(errno));
 		}
-		return;
+		return Err::Process;
 	}
 	else if (receivedBytes == 0)
 	{
@@ -159,7 +177,26 @@ void Network::handleConnection(int connSock)
 		{
 			Log::err("close(): %s", strerror(errno));
 		}
-		return;
+		return Err::Process;
+	}
+	
+	conn->readLen += receivedBytes;
+	receivedBytes = conn->readLen;
+	
+	if (strnstr(buffer, "\r\n\r\n", receivedBytes) == nullptr
+		&& strnstr(buffer, "\r\r", receivedBytes) == nullptr
+		&& strnstr(buffer, "\n\n", receivedBytes) == nullptr)
+	{
+		if (receivedBytes == readBufSize)
+		{
+			if (close(connSock) == -1)
+			{
+				Log::err("close(): %s", strerror(errno));
+			}
+			return Err::Process;
+		}
+		
+		return Err::ReadMore;
 	}
 	
 	char* rPos = (char*)memchr(buffer, '\r', receivedBytes);
@@ -247,7 +284,7 @@ void Network::handleConnection(int connSock)
 			{
 				Log::err("close(): %s", strerror(errno));
 			}
-			return;
+			return Err::Process;
 		}
 	}
 		
@@ -266,7 +303,7 @@ void Network::handleConnection(int connSock)
 			Log::err("close(): %s", strerror(errno));
 		}
 		
-		return;
+		return Err::Process;
 	}
 	
 	if (res.version >= HttpVersion::V1_0)
@@ -289,7 +326,7 @@ void Network::handleConnection(int connSock)
 				Log::err("close(): %s", strerror(errno));
 			}
 			
-			return;
+			return Err::Process;
 		}
 		if (mimeType != nullptr)
 		{
@@ -313,7 +350,7 @@ void Network::handleConnection(int connSock)
 				Log::err("close(): %s", strerror(errno));
 			}
 			
-			return;
+			return Err::Process;
 		}
 	}
 	
@@ -334,7 +371,7 @@ void Network::handleConnection(int connSock)
 				Log::err("close(): %s", strerror(errno));
 			}
 			
-			return;
+			return Err::Process;
 		}
 	}
 	
@@ -349,6 +386,8 @@ void Network::handleConnection(int connSock)
 	{
 		Log::err("close(): %s", strerror(errno));
 	}
+	
+	return Err::OK;
 }
 
 void Network::shutdown()
